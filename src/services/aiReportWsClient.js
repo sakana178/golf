@@ -1,4 +1,5 @@
 import { parseAIReportWsMessage } from './aiReportWsProtocol';
+import { getWsBaseUrl } from '../utils/apiConfig';
 
 const listeners = new Set();
 let activeSocket = null;
@@ -95,11 +96,8 @@ function emit(event) {
 }
 
 function buildWsUrl({ wsPath, params }) {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.host;
-
   // 路径清洗：确保路径是后端要求的 /ws/ai-report/:id
-  let cleanPath = wsPath;
+  let cleanPath = wsPath || '';
   if (typeof cleanPath === 'string' && cleanPath.startsWith('/api')) {
     cleanPath = cleanPath.replace('/api', '');
   }
@@ -108,7 +106,7 @@ function buildWsUrl({ wsPath, params }) {
     cleanPath = cleanPath.replace('/AIReport', '/ai-report');
   }
 
-  // Force relative path to ensure we use the proxy (strip domain/protocol from backend response)
+  // Force relative path to ensure we use the base from config
   if (typeof cleanPath === 'string' && cleanPath.includes('://')) {
     try {
       const urlObj = new URL(cleanPath);
@@ -118,8 +116,9 @@ function buildWsUrl({ wsPath, params }) {
     }
   }
 
-  // Always build absolute URL pointing to current host (Vite Proxy)
-  const base = `${protocol}//${host}${cleanPath}`;
+  // 使用统一的 WebSocket 基础地址
+  const baseUrl = getWsBaseUrl();
+  const base = `${baseUrl}${cleanPath}`;
 
   const search = new URLSearchParams();
 
