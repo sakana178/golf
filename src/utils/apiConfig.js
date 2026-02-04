@@ -21,32 +21,39 @@ export const getApiBaseUrl = () => {
 
 // 获取 WebSocket 基础 URL
 export const getWsBaseUrl = () => {
-    // 优先使用环境变量 VITE_WS_URL 或 VITE_WS_BASE_URL
+    // 1. 优先使用环境变量，这是最灵活的配置方式
     const envWsUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_WS_BASE_URL;
     if (envWsUrl) {
         return envWsUrl.endsWith('/') ? envWsUrl.slice(0, -1) : envWsUrl;
     }
 
-    // 开发环境：如果 VITE_API_BASE_URL 存在且不包含 localhost（说明指向了远程后端），
-    // 则尝试将 http 改为 ws
-    const apiBase = import.meta.env.VITE_API_BASE_URL;
-    if (apiBase && !apiBase.includes('localhost') && apiBase.startsWith('http')) {
-        return apiBase.replace(/^http/, 'ws');
+    const { protocol, hostname, host } = window.location;
+    const isVercel = hostname.includes('vercel.app');
+    const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
+
+    // 2. 如果在 Vercel 环境下
+    // Vercel Rewrites 不支持 WebSocket，因此必须直连后端服务器
+    if (isVercel) {
+        // 这里填入你目前后端的固定服务器地址
+        // 注意：如果 Vercel 是 https，后端也必须支持 wss (通常需要域名+SSL)
+        const BACKEND_SERVER_IP = '8.148.244.222:8080'; 
+        return `${wsProtocol}//${BACKEND_SERVER_IP}`;
     }
 
-    // 开发环境默认使用本地代理或直连
+    // 3. 开发环境
     if (import.meta.env.DEV) {
-        // 如果 vite.config.js 配置了 /ws 代理，可以使用相对路径，
-        // 但为了通用性，默认返回 ws://localhost:8080
-        return 'ws://localhost:8080';
+        // 如果环境变量里配置了 API 地址且不是 localhost，尝试转换协议直连
+        const apiBase = import.meta.env.VITE_API_BASE_URL;
+        if (apiBase && !apiBase.includes('localhost') && apiBase.startsWith('http')) {
+            return apiBase.replace(/^http/, 'ws');
+        }
+        // 默认走本地开发代理
+        return `${wsProtocol}//${host}`;
     }
 
-    // 生产环境（如 Vercel）：由于 Vercel Rewrite 不支持 WebSocket，
-    // 这里必须返回实际的后端 WS 地址。
-    // 如果没有配置环境变量，默认回退到当前 host（但这在 Vercel 上通常会失败）
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    return `${protocol}//${host}`;
+    // 4. 普通服务器部署（如 Nginx）
+    // 在普通服务器上，通常会配置 Nginx 代理 /ws 路径，所以可以使用相对当前域名的地址
+    return `${wsProtocol}//${host}`;
 };
 
 // 构建完整的 API URL
