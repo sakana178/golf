@@ -120,6 +120,8 @@ function buildWsUrl({ wsPath, params }) {
   const baseUrl = getWsBaseUrl();
   const base = `${baseUrl}${cleanPath}`;
 
+  console.log(`[AIReportWs] Connecting to: ${base}`);
+
   const search = new URLSearchParams();
 
   // 注入 ngrok 跳过警告的参数 (Re-added for stability)
@@ -294,9 +296,10 @@ export function startAIReportWsJob({
     }
   };
 
-  ws.onerror = () => {
+  ws.onerror = (err) => {
+    console.error('[AIReportWs] Connection Error. If on Vercel, check if backend IP supports WSS and a valid SSL certificate.', err);
     const meta = getPersistedJobMeta(assessmentId);
-    emit({ type: 'error', status: 'failure', terminal: true, message: 'WebSocket 连接失败', assessmentId, ...(meta || {}) });
+    emit({ type: 'error', status: 'failure', terminal: true, message: 'WebSocket 连接失败 (SSL/Mixed Content?)', assessmentId, ...(meta || {}) });
     safeRejectConnected(new Error('WebSocket connection failed'));
   };
 

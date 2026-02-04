@@ -77,6 +77,7 @@ export async function createAIReport(
   }
 
   const body = JSON.stringify(payload);
+  console.log('[createAIReport] Requesting POST /api/AIReport with payload:', payload);
 
   const res = await fetch('/api/AIReport', {
     method: 'POST',
@@ -86,12 +87,15 @@ export async function createAIReport(
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    console.error(`[createAIReport] API Error (${res.status}):`, text);
     const err = new Error(text || `Failed to create AI report (${res.status})`);
     err.status = res.status;
     err.body = text;
     throw err;
   }
 
-  return res.json().catch(() => ({}));
+  const data = await res.json().catch(() => ({}));
+  console.log('[createAIReport] API Success:', data);
+  return data;
 }
 

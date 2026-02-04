@@ -21,38 +21,31 @@ export const getApiBaseUrl = () => {
 
 // 获取 WebSocket 基础 URL
 export const getWsBaseUrl = () => {
-    // 1. 优先使用环境变量，这是最灵活的配置方式
+    // 1. 优先使用专门的 WS 环境变量
     const envWsUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_WS_BASE_URL;
     if (envWsUrl) {
         return envWsUrl.endsWith('/') ? envWsUrl.slice(0, -1) : envWsUrl;
+    }
+
+    // 2. 尝试从 VITE_API_BASE_URL 自动转换 (http -> ws, https -> wss)
+    const apiBase = import.meta.env.VITE_API_BASE_URL;
+    if (apiBase && apiBase.startsWith('http')) {
+        return apiBase.replace(/^http/, 'ws');
     }
 
     const { protocol, hostname, host } = window.location;
     const isVercel = hostname.includes('vercel.app');
     const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
 
-    // 2. 如果在 Vercel 环境下
-    // Vercel Rewrites 不支持 WebSocket，因此必须直连后端服务器
+    // 3. Vercel 环境处理
     if (isVercel) {
-        // 这里填入你目前后端的固定服务器地址
-        // 注意：如果 Vercel 是 https，后端也必须支持 wss (通常需要域名+SSL)
+        // Vercel 生产环境地址转发不支持 WebSocket
+        // 如果没有配置环境变量，默认尝试连接固定 IP (注意：HTTPS 下连接 IP 的 wss 可能会因证书问题失败)
         const BACKEND_SERVER_IP = '8.148.244.222:8080'; 
         return `${wsProtocol}//${BACKEND_SERVER_IP}`;
     }
 
-    // 3. 开发环境
-    if (import.meta.env.DEV) {
-        // 如果环境变量里配置了 API 地址且不是 localhost，尝试转换协议直连
-        const apiBase = import.meta.env.VITE_API_BASE_URL;
-        if (apiBase && !apiBase.includes('localhost') && apiBase.startsWith('http')) {
-            return apiBase.replace(/^http/, 'ws');
-        }
-        // 默认走本地开发代理
-        return `${wsProtocol}//${host}`;
-    }
-
-    // 4. 普通服务器部署（如 Nginx）
-    // 在普通服务器上，通常会配置 Nginx 代理 /ws 路径，所以可以使用相对当前域名的地址
+    // 4. 开发环境或普通服务器部署
     return `${wsProtocol}//${host}`;
 };
 

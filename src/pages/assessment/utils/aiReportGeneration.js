@@ -18,48 +18,53 @@ export async function requestAIReportGeneration(
   if (!assessmentId) throw new Error('Missing assessmentId');
   if (!token) throw new Error('Missing token');
 
-  // 1. Start WS connection first (Prepare the channel)
-  // Backend returns: { job_id, ws_endpoint: "/ws/ai-report/:ass_id", status: "processing" }
-  // We anticipate the endpoint based on assessmentId.
-  const wsEndpoint = wsPath || `/ws/ai-report/${assessmentId}`;
+  const language = getBackendLang();
+  console.log(`[requestAIReportGeneration] Starting for assessmentId: ${assessmentId}`);
 
+  // 1. FIRST: Start WS connection (Subscription)
+  // We start the WS first so we don't miss the first messages after the POST trigger
+  const wsEndpoint = wsPath || `/ws/ai-report/${assessmentId}`;
   const jobMeta = {
     ...(assessmentType ? { assessmentType } : {}),
     ...(title ? { title } : {})
   };
 
-  // Start connecting immediately. Note: jobId is not yet available, but usually connecting by assessmentId is sufficient for subscription.
+  console.debug('[requestAIReportGeneration] Initiating WebSocket connection...');
   const wsJob = startAIReportWsJob({
     token,
     assessmentId,
     wsEndpoint,
     jobMeta
-    // jobId: undefined (not yet created)
   });
 
+  // 2. WAIT for WS connection (with a fallback)
+  // Even if WS fails (e.g. SSL error on Vercel), we still want to trigger the POST
   try {
-    console.debug('[requestAIReportGeneration] Waiting for WebSocket connection...');
+    console.debug('[requestAIReportGeneration] Waiting for WS to open...');
+    // We give it a short time to try connecting
     await wsJob.connectionPromise;
-    console.debug('[requestAIReportGeneration] WebSocket connected. Triggering AI report generation...');
+    console.log('[requestAIReportGeneration] WebSocket connected successfully.');
   } catch (wsErr) {
-    console.error('[requestAIReportGeneration] WebSocket connection failed, aborting generation request:', wsErr);
-    throw wsErr;
+    console.warn('[requestAIReportGeneration] WebSocket connection failed (likely SSL/WSS issue), but proceeding with POST:', wsErr);
+    // Continue anyway - we don't want to block the report generation just because status tracking failed
   }
 
+  // 3. SECOND: Trigger generation via POST
+  let postRes;
   try {
-    const language = getBackendLang();
-    // 2. Trigger generation via POST
-    const res = await createAIReport(assessmentId, { token, language });
-
-    // Optional: Warn if backend returned a different endpoint (usually shouldn't happen for the same assessment)
-    if (res?.ws_endpoint && res.ws_endpoint !== wsEndpoint) {
-      console.warn('[requestAIReportGeneration] Note: Backend returned a specific WS endpoint different from default:', res.ws_endpoint);
+    console.debug('[requestAIReportGeneration] Sending POST /api/AIReport...');
+    postRes = await createAIReport(assessmentId, { token, language });
+    console.log('[requestAIReportGeneration] POST success:', postRes);
+    
+    // Update job meta with the real job ID from backend
+    if (postRes?.job_id && wsJob.updateJobId) {
+        wsJob.updateJobId(postRes.job_id);
     }
-
-    return { wsJob, res };
+    
+    return { wsJob, res: postRes };
   } catch (err) {
-    // If POST fails, close the WS connection we just opened since the job failed to start
+    console.error('[requestAIReportGeneration] POST failed:', err);
     wsJob.close();
-    throw err;
+    throw err; 
   }
 }
